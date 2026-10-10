@@ -1,1 +1,0 @@
-"""HarvestCast API application package."""
