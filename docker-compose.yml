@@ -1,0 +1,58 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: harvestcast
+      POSTGRES_USER: harvestcast
+      POSTGRES_PASSWORD: harvestcast
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harvestcast -d harvestcast"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://harvestcast:harvestcast@timescaledb:5432/harvestcast
+      FRONTEND_ORIGIN: http://localhost:5173
+      MQTT_HOST: ${MQTT_HOST:-}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_TOPIC: ${MQTT_TOPIC:-harvestcast/scans}
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+  simulator:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    entrypoint: ["python", "-m", "simulator.mock_edge_streamer"]
+    environment:
+      SIMULATOR_API_URL: http://api:8000
+      SIMULATOR_INTERVAL_SECONDS: 4
+    depends_on:
+      - api
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000/api/v1/ws/telemetry
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  timescale_data:
